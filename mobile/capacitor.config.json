@@ -1,0 +1,17 @@
+{
+  "appId": "app.marginalia.reader",
+  "appName": "Marginalia",
+  "webDir": "www",
+  "backgroundColor": "#F6F2EA",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": true,
+    "preferredContentMode": "mobile",
+    "allowsLinkPreview": false
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

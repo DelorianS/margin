@@ -1,0 +1,57 @@
+name: Build iPhone and iPad IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, mobile-cloud-build]
+    paths:
+      - '.github/workflows/ios-ipa.yml'
+      - 'mobile/**'
+      - 'public/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    name: Build unsigned device IPA
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Prepare the original interface
+        run: |
+          npm --prefix mobile ci
+          npm --prefix mobile run sync
+          npm --prefix mobile run verify
+      - name: Build and package device app
+        run: bash mobile/scripts/build-ipa.sh
+      - name: Upload IPA for personal signing
+        uses: actions/upload-artifact@v6
+        with:
+          name: Marginalia-unsigned-IPA
+          path: |
+            mobile/output/Marginalia-unsigned.ipa
+            mobile/output/Marginalia-unsigned.ipa.sha256
+            mobile/output/INSTALL.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ios-build-log
+          path: mobile/output/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,10 @@
+node_modules/
+output/
+www/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App.xcodeproj/xcuserdata/
+ios/App/App.xcworkspace/xcuserdata/
+ios/App/DerivedData/
+*.ipa
+*.xcarchive
