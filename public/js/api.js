@@ -1,6 +1,7 @@
 // HTTP client, durable device copies and per-device reading preferences.
 import { resolveApiUrl, requestHeaders, serverScope, getConnection, setConnection, isNativeApp } from './connection.js';
 import { DeviceStorage, createDeviceRepository, isCacheable, cacheKey } from './device-storage.js';
+import { createDeviceReader } from './device-reader.js';
 
 export class ApiError extends Error {
   constructor(message, { status, code, sourceUrl } = {}) { super(message); this.status = status; this.code = code; this.sourceUrl = sourceUrl; }
@@ -46,11 +47,11 @@ function setLibraryIdentity(identity) {
 }
 
 const unavailable = error => !error.status || [401, 403, 502, 503, 504].includes(error.status);
-const offlineMessage = 'Your PC is unavailable. Saved chapters and profiles still work; connect to your PC for AI and new downloads.';
+const offlineMessage = 'Your PC is unavailable. On iPhone/iPad, reading and chapter downloads still work; new downloads need internet. AI needs the PC.';
 
 // Dependencies are injectable so offline/reconnect behaviour can be verified
 // without a running PC or a model request.
-export function createApiClient({ transport = request, repository = createDeviceRepository(new DeviceStorage(), deviceScope), onIdentity = setLibraryIdentity } = {}) {
+export function createApiClient({ transport = request, repository = createDeviceRepository(new DeviceStorage(), deviceScope), onIdentity = setLibraryIdentity, nativeReading = isNativeApp(), readerOptions = {} } = {}) {
   let online = null, connectionError = null, pairingRequired = false, syncPromise = null, backgroundSyncAt = 0, failedAt = 0, lastFailure = null;
   const notify = () => {
     if (globalThis.window?.dispatchEvent && globalThis.CustomEvent) window.dispatchEvent(new CustomEvent('marginalia:connection', { detail: { online, error: connectionError } }));
@@ -66,13 +67,18 @@ export function createApiClient({ transport = request, repository = createDevice
     try { await repository.cache(url, data); }
     catch (error) { repository.storage.error = error.message; notify(); }
   };
+  const deviceReader = nativeReading ? createDeviceReader(repository, {
+    getAnalysis: (id, n) => online ? transport('GET', `/api/novels/${id}/chapters/${n}?device=1`, undefined, { timeoutMs: 1500 }) : null,
+    analyzeRange: async (id, from, to) => { await syncPending(); return transport('POST', `/api/novels/${id}/import`, { from, to, analyze: true }); },
+    ...readerOptions, notify,
+  }) : null;
 
   async function syncPending() {
     if (syncPromise) return syncPromise;
     syncPromise = (async () => {
       let edits;
       try { edits = await repository.pending(); } catch { return { synced: 0, pending: 0 }; }
-      if (!edits.length) return { synced: 0, pending: 0 };
+      if (!edits.length && !await deviceReader?.hasPending()) return { synced: 0, pending: 0 };
       const startingScope = repository.scope();
       // Check the library before sending any queued edit: another PC/library can
       // have the same numeric character IDs.
@@ -80,6 +86,8 @@ export function createApiClient({ transport = request, repository = createDevice
       if (repository.scope() !== startingScope) return { synced: 0, pending: (await repository.pending()).length };
       const before = await repository.pending();
       onIdentity(health.library);
+      if (repository.scope() !== startingScope) return { synced: 0, pending: (await repository.pending()).length };
+      await deviceReader?.sync(transport, health.library);
       edits = await repository.pending();
       if (before.length && !edits.some(e => before.some(old => old.storageKey === e.storageKey))) return { synced: 0, pending: edits.length };
       let synced = 0;
@@ -98,6 +106,17 @@ export function createApiClient({ transport = request, repository = createDevice
 
   async function req(method, url, body) {
     const startingScope = repository.scope();
+    if (deviceReader) {
+      const local = await deviceReader.handle(method, url, body);
+      if (local.handled) {
+        if (repository.scope() !== startingScope) throw new ApiError('The PC library changed. Reopen this story.', { status: 409, code: 'CONNECTION_CHANGED' });
+        if (online) void syncPending().then(() => {
+          const chapter = method === 'GET' && url.match(/^\/api\/novels\/(\d+)\/chapters\/(\d+)(?:\?|$)/);
+          if (chapter) return transport('GET', `/api/novels/${chapter[1]}/chapters/${chapter[2]}?device=1`);
+        }).catch(() => {});
+        return local.data;
+      }
+    }
     try {
       // A failed PC probe should not make every saved chapter/profile wait for
       // another network timeout. Health checks always remain available to retry.
@@ -107,11 +126,14 @@ export function createApiClient({ transport = request, repository = createDevice
       // edit that was just sent while reconnecting.
       if (method === 'PATCH' && /^\/api\/characters\/\d+$/.test(url)) await syncPending();
       if (repository.scope() !== startingScope) throw new ApiError('The PC library changed. Open this character from the current library first.', { status: 409, code: 'CONNECTION_CHANGED' });
-      const data = await transport(method, url, body);
+      if (deviceReader && method === 'POST' && (/\/analyze$/.test(url) || /\/import$/.test(url) && body?.analyze)) await syncPending();
+      let data = await transport(method, url, body);
       if (repository.scope() !== startingScope) throw new ApiError('The PC connection changed. Open this page again.', { status: 409, code: 'CONNECTION_CHANGED' });
       if (url === '/api/health') onIdentity(data.library);
       connected(true);
       if (method === 'GET') {
+        if (deviceReader) data = await deviceReader.merge(url, data);
+        if (deviceReader && url === '/api/jobs') data = [...data, ...deviceReader.jobs()];
         await cache(url, data);
         if (Date.now() - backgroundSyncAt > 5000) { backgroundSyncAt = Date.now(); void syncPending().catch(() => {}); }
         if (isCacheable(url)) {
@@ -138,14 +160,16 @@ export function createApiClient({ transport = request, repository = createDevice
         const path = cacheKey(url).split('?')[0];
         try {
           if (/^\/api\/characters\/\d+$/.test(path)) await repository.invalidateCharacter(path.split('/').at(-1));
-          if (/^\/api\/novels\/\d+$/.test(path)) await repository.invalidateNovel(path.split('/').at(-1));
+          if (!deviceReader && /^\/api\/novels\/\d+$/.test(path)) await repository.invalidateNovel(path.split('/').at(-1));
         } catch { /* Preserve the server's real 404 if cache cleanup fails. */ }
       }
       if (!unavailable(error)) throw error;
       disconnected(error);
       if (method === 'GET') {
+        if (deviceReader && url === '/api/novels') return deviceReader.merge(url, await repository.cached(url) || []);
+        if (deviceReader && /^\/api\/novels\/\d+$/.test(url)) { const book = await deviceReader.novel(url.split('/').at(-1)); if (book) return book; }
         try { const saved = await repository.cached(url, { offline: true }); if (saved !== undefined) return saved; } catch { /* No device copy. */ }
-        if (/^\/api\/jobs(?:\?|$)/.test(url)) return [];
+        if (/^\/api\/jobs(?:\?|$)/.test(url)) return deviceReader?.jobs() || [];
         if (url === '/api/llm/status') return { ok: false, offline: true, models: [], error: 'PC offline · saved profiles available' };
         if (url === '/api/network') return { enabled: false, local: false, addresses: [], offline: true };
         // Clear the cast when there is no snapshot at this chapter; keeping the
@@ -164,11 +188,30 @@ export function createApiClient({ transport = request, repository = createDevice
     get: u => req('GET', u), post: (u, b = {}) => req('POST', u, b), put: (u, b) => req('PUT', u, b), patch: (u, b) => req('PATCH', u, b), del: u => req('DELETE', u),
     syncPending,
     setLibraryIdentity: onIdentity,
-    async deviceStatus() { return { online, error: connectionError, pairingRequired, ...await repository.status() }; },
+    async adoptDeviceLibrary(library) {
+      if (!deviceReader || repository.scope() !== 'unpaired') return;
+      const rows = await repository.storage.entries('unpaired\u0000');
+      if (repository.scope() !== 'unpaired') throw new Error('The library connection changed. Try pairing again.');
+      const put = rows.filter(r => r.key.includes('\u0000reading:') || r.key.includes('\u0000cache:/api/novels/')).map(r => ({ key: r.key.replace('unpaired\u0000', `library:${library}\u0000`), value: r.value }));
+      await repository.storage.commit({ put });
+    },
+    async deviceStatus() {
+      const status = await repository.status();
+      if (deviceReader && status.storageAvailable) for (const book of await deviceReader.records()) {
+        if (!status.savedNovels.some(n => n.novelId === book.id)) status.savedNovels.push({ novelId: book.id, title: book.title, chapter: book.last_chapter });
+      }
+      return { online, error: connectionError, pairingRequired, ...status };
+    },
     async saveForOffline(novelId, { chapter, onProgress, signal } = {}) {
       if (!Number.isSafeInteger(Number(novelId)) || Number(novelId) < 1 || !Number.isSafeInteger(Number(chapter)) || Number(chapter) < 1) throw new Error('Choose a novel and chapter to save.');
       onProgress?.({ phase: 'downloading' });
       const startingScope = repository.scope();
+      if (deviceReader && !online) {
+        const book = await deviceReader.novel(novelId);
+        if (!book) throw new Error('Open the story on this device first.');
+        const rows = await repository.storage.entries(`${repository.scope()}\u0000cache:/api/novels/${novelId}/chapters/`);
+        return { novelId: Number(novelId), chapter: Number(chapter), chapters: rows.length, characters: 0 };
+      }
       try {
         const snapshot = await transport('GET', `/api/novels/${novelId}/device-snapshot?chapter=${chapter}`, undefined, { signal, timeoutMs: 120000 });
         if (signal?.aborted) throw new DOMException('Save cancelled.', 'AbortError');
@@ -198,6 +241,7 @@ export function createApiClient({ transport = request, repository = createDevice
             if (repository.scope() !== startingScope) throw new ApiError('The PC connection changed. Open this novel again.', { status: 409 });
             onIdentity(health.library);
             if (repository.scope() !== startingScope) throw new ApiError('The PC library changed. Open this novel again.', { status: 409 });
+            await syncPending();
           }
           const r = await fetch(resolveApiUrl(url), { method: 'POST', headers: { ...requestHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ ...body, ...(requestId ? { clientRequestId: requestId } : {}) }), signal: ctrl.signal });
           if (ctrl.signal.aborted) { onEvent({ type: 'aborted' }); return; }
@@ -219,7 +263,7 @@ export function createApiClient({ transport = request, repository = createDevice
           emitLine(buf);
         } catch (error) {
           if (error.name === 'AbortError') onEvent({ type: 'aborted' });
-          else { disconnected(error); onEvent({ type: 'error', message: 'AI needs your PC. Keep it awake and the reader running, then try again.' }); }
+          else { if (unavailable(error)) disconnected(error); onEvent({ type: 'error', message: error.status ? error.message : 'AI needs your PC. Keep it awake and the reader running, then try again.' }); }
         } finally { onEvent({ type: 'end' }); }
       })();
       return ctrl;

@@ -1,10 +1,12 @@
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 
 const mobile = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = resolve(mobile, '../public');
 const destination = resolve(mobile, 'www');
+await build({ entryPoints: [resolve(mobile, 'chapter-source.js')], outfile: resolve(source, 'js/chapter-extractor.js'), bundle: true, format: 'esm', platform: 'browser', target: 'safari17', minify: true, alias: { cheerio: 'cheerio/slim' }, absWorkingDir: mobile });
 await mkdir(destination, { recursive: true });
 // Only public app assets are copied. PC databases, model keys and runtime tokens
 // must never be included in the app bundle.

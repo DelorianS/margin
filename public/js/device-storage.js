@@ -148,8 +148,18 @@ export function createDeviceRepository(storage, scope) {
     pending,
     async cached(url, { offline = false } = {}) {
       const expected = scope();
-      const record = await storage.get(key(url));
+      let record = await storage.get(key(url));
       checkScope(expected);
+      if (record === undefined && offline && /^\/api\/(?:novels\/\d+\/characters|characters\/\d+)\?chapter=\d+$/.test(cacheKey(url))) {
+        const parsed = new URL(url, 'https://reader.invalid'), cutoff = Number(parsed.searchParams.get('chapter'));
+        const base = `${prefix()}cache:${parsed.pathname}?chapter=`;
+        const rows = await storage.entries(base); checkScope(expected);
+        const older = rows.map(row => ({ ...row, chapter: Number(row.key.slice(base.length)) })).filter(row => row.chapter <= cutoff && row.chapter > 0).sort((a, b) => b.chapter - a.chapter)[0];
+        if (older) {
+          const stamp = c => ({ ...clone(c), inChapter: false, current: null, savedThroughChapter: older.chapter });
+          record = Array.isArray(older.value) ? older.value.map(stamp) : stamp(older.value);
+        }
+      }
       if (record === undefined) return undefined;
       const edits = await pending(); checkScope(expected);
       if (offline && /^\/api\/novels(?:\/\d+)?$/.test(cacheKey(url))) {

@@ -6,7 +6,7 @@ export function deviceWelcome() {
   return h('main', { class: 'pairing-required device-welcome stack' },
     h('span', { class: 'brand-mark' }, icon('feather')), h('h1', null, 'Your stories, with you.'),
     h('p', null, 'Keep your Marginalia library, character cards and profiles on your iPhone or iPad, with the same reading experience.'),
-    h('p', { class: 'hint' }, 'Connect to your PC once to save your stories. Saved chapters and profiles work with the PC off. Ask, recaps and new analysis use your PC while it is on.'),
+    h('p', { class: 'hint' }, 'Read and download chapters directly on this device. Connect your PC for questions, recaps and character analysis.'),
     h('button', { class: 'btn primary lg', onclick: () => openDeviceSettings() }, icon('link'), 'Connect to my PC'));
 }
 
@@ -29,6 +29,7 @@ async function connect(link) {
     const info = await health.json();
     if (ctrl.signal.aborted) throw new DOMException('Connection timed out', 'AbortError');
     if (info.app !== 'marginalia-reader' || !info.library || !info.homeNetwork) throw new Error('This address is not your home-network Marginalia reader.');
+    await api.adoptDeviceLibrary(info.library);
     setConnection({ ...candidate, library: info.library });
     await api.setLibraryIdentity?.(info.library);
     })()]);
@@ -60,7 +61,7 @@ export async function openDeviceSettings() {
     feedback,
     h('div', { class: 'divider' }),
     h('p', { class: 'hint' }, 'Use Save on device in a story’s Contents to save downloaded chapters and character profiles up to your current chapter. Opened chapters and profiles are also saved automatically. Profile appearance edits made offline sync when you reconnect.'),
-    h('p', { class: 'hint' }, 'AI works while the PC is awake and Marginalia is running. Saved information remains available away from home. Removing the app also removes its saved data.'));
+    h('p', { class: 'hint' }, 'Chapter downloads use this device’s internet connection, with no PC needed. Downloaded text syncs to the PC for AI when you reconnect. Questions, recaps and new character analysis need the PC awake and Marginalia running. Removing the app also removes its saved data.'));
   modal({ title: 'PC & saved data', description: 'Your reading experience, saved on this device.', body,
     footer: close => [h('button', { class: 'btn', onclick: close }, 'Done'),
       h('button', { class: 'btn primary', onclick: async e => {
@@ -87,7 +88,7 @@ export async function saveStoryOnDevice(novelId, chapter) {
   modal({ title: 'Save on device', description: `Character profiles are saved as of Chapter ${chapter}.`,
     onClose: () => { if (!finished) ctrl.abort(); },
     body: h('div', { class: 'stack' }, message,
-      h('p', { class: 'hint' }, 'Only chapters already downloaded on your PC are copied. This does not start AI analysis or fetch chapters from the source site. Earlier character profiles are saved separately when opened.')),
+      h('p', { class: 'hint' }, 'Opened chapters are saved automatically on this device. Use Contents → Download context for more chapters. When the PC is connected, this also copies its saved profiles as of this chapter. Earlier character profiles are saved separately when opened.')),
     footer: close => { closeDialog = close; return cancelButton; },
   });
   try {
@@ -110,7 +111,7 @@ export function installDeviceStatus() {
     const id = ++updateId, state = await api.deviceStatus();
     if (id !== updateId) return;
     const message = state.storageError ? 'Device storage needs attention' : state.pairingRequired ? 'Reconnect PC · saved stories available' :
-      !state.online ? state.pending ? `PC offline · ${state.pending} profile ${state.pending === 1 ? 'change' : 'changes'} saved` : 'PC offline · saved stories available' : state.pending ? `${state.pending} profile changes waiting to sync` : '';
+      !state.online ? state.pending ? `AI offline · ${state.pending} profile ${state.pending === 1 ? 'change' : 'changes'} saved` : 'AI offline · reading available' : state.pending ? `${state.pending} profile changes waiting to sync` : '';
     banner.hidden = !message || !getConnection().origin;
     banner.textContent = message;
   };

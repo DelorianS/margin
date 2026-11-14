@@ -2,6 +2,10 @@
 
 This is a native iOS/iPadOS app project with the existing Marginalia interface bundled inside it. The reader does not load its interface from the PC. Saved chapters and character profiles stay on the device; AI work runs through your PC connection. The full library remains on the PC and must be deliberately saved to each device.
 
+Version 1.1 downloads chapter text directly from HTTPS source sites on the iPhone/iPad. You can add a story, turn to new chapters, download a chapter range, paste text and read without a PC. New downloads need the device's internet connection; saved text works without internet. A site that blocks automated access still requires opening the original page and pasting text. Pairing is optional for reading.
+
+Downloaded text is queued locally and syncs to the paired PC for Ask, recaps and character analysis. Restart the PC reader after updating its source so the new text-sync endpoint is available. Existing PC chapter text is preserved if a device copy differs; resolve that conflict on the PC before asking about that version. AI needs the PC awake and reachable. Profile appearance edits can still be saved offline.
+
 ## Prepare on this Windows PC
 
 From `D:\Reader\mobile`:

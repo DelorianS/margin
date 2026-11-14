@@ -16,7 +16,9 @@
     "@capacitor/ios": "8.6.2"
   },
   "devDependencies": {
-    "@capacitor/cli": "8.6.2"
+    "@capacitor/cli": "8.6.2",
+    "cheerio": "1.0.0",
+    "esbuild": "0.28.2"
   },
   "engines": {
     "node": ">=22.13"

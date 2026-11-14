@@ -74,7 +74,6 @@ async function route() {
 window.addEventListener('hashchange', route);
 async function start() {
   installDeviceStatus();
-  if (isNativeApp() && !getConnection().origin) { fill(app, deviceWelcome()); return; }
   try { await api.get('/api/health'); } catch { /* Keep the saved library available with the PC off. */ }
   try { await api.get('/api/network'); }
   catch (e) {

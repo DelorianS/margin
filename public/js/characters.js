@@ -205,6 +205,7 @@ export async function openCharacterCard(cid, anchor, ctx) {
   fill(el, 
     profileHeader(c, { close: () => entry.close(), tags: [h('span', { class: `pill ${status}` }, status), h('span', { class: 'chip' }, icon('clock', 'sm'), lastSeenText)] }),
     h('div', { class: 'cc-body' },
+      c.savedThroughChapter ? h('p', { class: 'hint' }, `Last saved at Chapter ${c.savedThroughChapter}. Connect your PC for new character analysis.`) : null,
       (p.role || c.description) && h('div', { class: 'cc-section' }, h('p', { style: { fontSize: '14px', color: 'var(--ink)' } }, capitalize(p.role || c.description))),
       p.sequence ? h('div', { class: 'cc-section' }, sequenceCard(p.power)) : null,
       h('dl', { class: 'facts' },

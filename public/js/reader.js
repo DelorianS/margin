@@ -350,7 +350,7 @@ export async function renderReader(root, novelId, startN) {
           h('button', { class: 'btn', onclick: () => { entry.close(); saveStoryOnDevice(novel.id, n); } }, icon('download', 'sm'), 'Save on device'),
           h('button', { class: 'btn ghost', onclick: () => { entry.close(); openDeviceSettings(); } }, icon('link', 'sm'), 'PC & saved data')) : null,
         h('div', { class: 'label' }, 'Download context'),
-        h('div', { class: 'hint' }, 'Downloaded text is ready for Ask and Recaps immediately. No chapter analysis needed.'),
+        h('div', { class: 'hint' }, isNativeApp() ? 'Chapters download directly to this device. AI uses your PC when connected. Keep the app open while downloading.' : 'Downloaded text is ready for Ask and Recaps immediately. No chapter analysis needed.'),
         h('div', { class: 'row' }, h('span', { class: 'muted' }, 'Ch.'), fromIn, h('span', { class: 'muted' }, 'to'), toIn,
           h('button', { class: 'btn primary grow', onclick: async () => {
             try { await api.post(`/api/novels/${novel.id}/import`, { from: Number(fromIn.value), to: Number(toIn.value), analyze: analyzeIn.checked }); pollJobs(); }
