@@ -840,7 +840,7 @@ input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius
 /* Stop tap/double-tap magnification while retaining intentional pinch zoom.
    Apply to all inputs, including unclassed search/alias fields and iPad with a
    trackpad: pointer and viewport queries do not reliably identify iOS focus. */
-[data-device-app] { touch-action: manipulation; }
+[data-device-app], [data-device-app] * { touch-action: manipulation; }
 [data-device-app] input, [data-device-app] textarea,
 [data-device-app] select, [data-device-app] [contenteditable="true"] { font-size: max(16px, 1em) !important; }
 @media (pointer: coarse) {
