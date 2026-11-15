@@ -102,6 +102,19 @@ export function createDeviceReader(repository, { download = downloadChapter, par
         await repository.storage.commit({ put: [{ key: key(expected, `novel:${id}`), value: updated }] });
         return cached;
       }
+      // A PDF/imported PC copy is a reading source too. Cache it without queuing
+      // it back to the PC, and keep progress local to this device.
+      if (!refresh) {
+        let remote;
+        try { remote = await getAnalysis(id, n); } catch { /* Try the source when the PC is unavailable. */ }
+        check(expected);
+        if (remote?.number === n && Array.isArray(remote.paragraphs) && remote.paragraphs.length) {
+          await repository.cache(`/api/novels/${id}/chapters/${n}`, remote);
+          check(expected);
+          await repository.storage.commit({ put: [{ key: key(expected, `novel:${id}`), value: { ...book, last_chapter: n } }] });
+          return remote;
+        }
+      }
       const previous = await repository.cached(`/api/novels/${id}/chapters/${n - 1}`);
       const next = await repository.cached(`/api/novels/${id}/chapters/${n + 1}`); check(expected);
       const source = book.chapters?.find(c => c.number === n)?.url || previous?.nextUrl || next?.prevUrl || book.url_template?.replace('{n}', String(n));
