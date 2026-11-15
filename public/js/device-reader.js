@@ -37,14 +37,16 @@ async function nativePage(url) {
   return { status: response.status, html: await response.text(), url: response.url || url };
 }
 
-export function createDeviceReader(repository, { download = downloadChapter, parser = () => import('./chapter-extractor.js'), notify = () => {}, getAnalysis = async () => null, analyzeRange = async () => { throw new Error('Connect your PC to analyse these chapters.'); } } = {}) {
+export function createDeviceReader(repository, { download = downloadChapter, parser = () => import('./chapter-extractor.js'), notify = () => {}, getAnalysis = async () => null, bundledBooks = { list: async () => [], chapter: async () => null }, analyzeRange = async () => { throw new Error('Connect your PC to analyse these chapters.'); } } = {}) {
   const jobs = [], inflight = new Map();
   const scope = () => repository.scope();
   const key = (scope, suffix) => `${scope}\u0000reading:${suffix}`;
   const check = expected => { if (scope() !== expected) throw Object.assign(new Error('The library connection changed. Reopen this story.'), { status: 409 }); };
   const records = async () => {
     const expected = scope(), rows = await repository.storage.entries(key(expected, 'novel:')); check(expected);
-    return rows.map(r => r.value);
+    const map = new Map((await bundledBooks.list()).map(book => [book.id, book])); check(expected);
+    for (const row of rows) map.set(row.value.id, mergeNovel(map.get(row.value.id), row.value));
+    return [...map.values()];
   };
   async function novel(id) { return (await records()).find(n => n.id === Number(id)) || await repository.cached(`/api/novels/${id}`) || (await repository.cached('/api/novels') || []).find(n => n.id === Number(id)); }
   function mergeNovel(remote, device) {
@@ -101,6 +103,15 @@ export function createDeviceReader(repository, { download = downloadChapter, par
         const updated = { ...book, last_chapter: n };
         await repository.storage.commit({ put: [{ key: key(expected, `novel:${id}`), value: updated }] });
         return cached;
+      }
+      if (book.bundledBook) {
+        const included = await bundledBooks.chapter(book, n); check(expected);
+        if (!included) throw failure('The included book is unavailable. Reinstall the personal IPA.', 'NO_CONTENT');
+        // Bundled prose stays in the app; store progress without creating a PC
+        // upload queue or copying the entire book into browser storage.
+        await repository.storage.commit({ put: [{ key: key(expected, `novel:${id}`), value: { ...book, last_chapter: n } }] });
+        check(expected);
+        return included;
       }
       // A PDF/imported PC copy is a reading source too. Cache it without queuing
       // it back to the PC, and keep progress local to this device.
@@ -180,6 +191,8 @@ export function createDeviceReader(repository, { download = downloadChapter, par
     if (method === 'DELETE' && path.startsWith('/api/jobs/device-')) { const job = jobs.find(j => j.id === path.split('/').at(-1)); if (job) job.status = 'cancelled'; return { handled: true, data: { ok: true } }; }
     const own = path.match(/^\/api\/novels\/(\d+)$/);
     if (own && method === 'GET') { const book = await novel(+own[1]); if (book?.deviceOnly) return { handled: true, data: book }; }
+    const cast = path.match(/^\/api\/novels\/(\d+)\/characters$/);
+    if (cast && method === 'GET' && (await novel(+cast[1]))?.bundledBook) return { handled: true, data: await repository.cached(url, { offline: true }) || [] };
     if (own && method === 'PATCH') {
       const book = await novel(+own[1]);
       if (book) { const patch = {}; for (const field of ['title', 'author', 'icon', 'llm_context', 'wiki_url', 'wiki_ai']) if (body[field] !== undefined) patch[field] = body[field];

@@ -837,6 +837,12 @@ input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius
 .device-address { overflow-wrap: anywhere; }
 .device-save-actions { padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 .device-status { position: fixed; z-index: 55; left: 50%; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); max-width: calc(100vw - 24px); border: 1px solid var(--line-strong); background: var(--bg-elev); color: var(--ink-2); box-shadow: var(--shadow); border-radius: 999px; padding: 8px 14px; font-size: 12px; white-space: normal; text-align: center; }
+/* Stop tap/double-tap magnification while retaining intentional pinch zoom.
+   Apply to all inputs, including unclassed search/alias fields and iPad with a
+   trackpad: pointer and viewport queries do not reliably identify iOS focus. */
+[data-device-app] { touch-action: manipulation; }
+[data-device-app] input, [data-device-app] textarea,
+[data-device-app] select, [data-device-app] [contenteditable="true"] { font-size: max(16px, 1em) !important; }
 @media (pointer: coarse) {
   [data-device-app] .icon-btn { min-width: 40px; min-height: 44px; }
   [data-device-app] .input, [data-device-app] .textarea, [data-device-app] .select { font-size: 16px; }

@@ -2,6 +2,7 @@
 import { resolveApiUrl, requestHeaders, serverScope, getConnection, setConnection, isNativeApp } from './connection.js';
 import { DeviceStorage, createDeviceRepository, isCacheable, cacheKey } from './device-storage.js';
 import { createDeviceReader } from './device-reader.js';
+import { createBundledBooks } from './bundled-books.js';
 
 export class ApiError extends Error {
   constructor(message, { status, code, sourceUrl } = {}) { super(message); this.status = status; this.code = code; this.sourceUrl = sourceUrl; }
@@ -68,6 +69,7 @@ export function createApiClient({ transport = request, repository = createDevice
     catch (error) { repository.storage.error = error.message; notify(); }
   };
   const deviceReader = nativeReading ? createDeviceReader(repository, {
+    bundledBooks: createBundledBooks(),
     getAnalysis: (id, n) => online ? transport('GET', `/api/novels/${id}/chapters/${n}?device=1`, undefined, { timeoutMs: 1500 }) : null,
     analyzeRange: async (id, from, to) => { await syncPending(); return transport('POST', `/api/novels/${id}/import`, { from, to, analyze: true }); },
     ...readerOptions, notify,
